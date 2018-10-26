@@ -1,0 +1,27 @@
+{
+  "name": "rx-utils",
+  "version": "0.0.1",
+  "description": "pending",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "pending"
+  },
+  "repository": {
+    "type": "git",
+    "url": "pending"
+  },
+  "keywords": [
+    "pending"
+  ],
+  "author": "Vikas Gautam <v33vikasgautam@gmail.com> (http://mytrikks.blogspot.com)",
+  "license": "ISC",
+  "dependencies": {
+    "ramda": "^0.25.0",
+    "request": "^2.88.0",
+    "rxjs": "^6.3.3",
+    "tempfile": "^2.0.0"
+  }
+}
