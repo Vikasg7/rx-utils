@@ -3,7 +3,7 @@ const R = require("ramda")
 const FS = require("fs")
 const CP = require("child_process")
 const getTempFile = require("tempfile")
-const { map, flatMap, concatMap } = require("rxjs/operators")
+const { map, flatMap, concatMap, reduce } = require("rxjs/operators")
 const { log } = require("console")
 
 const tap = (fn) => {
@@ -139,7 +139,7 @@ const createReqMaker = (session) => (options) => Rx.Observable.create((o) => {
          o.complete()
       }
    })
-   .on("error", (e) => o.error(e))
+   req.on("error", (e) => o.error(e))
    return () => req.abort()
 })
 
@@ -156,6 +156,23 @@ const parseXml = (tag) => {
 
    return parser
 }
+
+const exec = (cmdStr) => Rx.Observable.create((Observer) => {
+   const child = CP.exec(cmdStr, (error, stdout, stderr) => {
+      const isEmpty = R.pipe(R.trim, R.isEmpty)
+      if (error) {
+         Observer.error(error)
+      }
+      else if (!isEmpty(stderr)) {
+         Observer.error(stderr)
+      }
+      else {
+         Observer.next(stdout)
+         Observer.complete()
+      }
+   })
+   return () => child.kill()
+})
 
 const DropLastN = (count) => (source) => Rx.Observable.create((Observer) => {
    let bucket = []
@@ -192,5 +209,6 @@ module.exports = {
    makeReqAsStream,
    parseXml,
    makeCsvRow,
-   DropLastN
+   DropLastN,
+   exec
 }
