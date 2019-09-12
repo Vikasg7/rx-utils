@@ -47,7 +47,7 @@ const finalyze = fn => source =>
       catchError(error =>
          Rx.of(error).pipe(
             tap(fn),
-            flatMap(throwError)
+            flatMap(Rx.throwError)
          )
       )
    )
