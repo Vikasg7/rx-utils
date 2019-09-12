@@ -1,64 +1,92 @@
 const Rx = require("rxjs")
+const { Observable } = require("rxjs")
+const { throw: throwError } = Observable
+const { map, flatMap, concatMap, reduce, catchError } = require("rxjs/operators")
 const R = require("ramda")
 const FS = require("fs")
 const CP = require("child_process")
 const getTempFile = require("tempfile")
-const { map, flatMap, concatMap, reduce } = require("rxjs/operators")
-const { log } = require("console")
 
-const tap = (fn) => {
+const curry = fn => (...args) =>
+   (args.length < fn.length)
+      ? (...rest) => curry(fn)(...[...args, ...rest])
+      : fn(...args)
+
+const pipe = (input, ...fns) => {
+   const isFunction = (fn) => typeof fn === 'function'
+   const pipeIn = (...fns) => (input) => fns.reduce((prev, fn) => fn(prev), input)
+   return isFunction(input)
+      ? pipeIn(input, ...fns)
+      : pipeIn(...fns)(input)
+}
+
+const tap = (fn) => (source) => {
    const tapper = (x, i) => {
       const v = fn(x, i)
       return (
-         (v instanceof Rx.Observable)
-         ? v.pipe(map(() => x))
-         : (v instanceof Promise)
-            ? Rx.from(v).pipe(map(() => x))
-            : Rx.of(x)
+         ((v instanceof Observable) || (v && v.constructor && v.constructor.name === "Observable"))
+            ? v.pipe(map(() => x))
+            : (v instanceof Promise)
+               ? Observable.from(v).pipe(map(() => x))
+               : Observable.of(x)
       )
    }
-   return concatMap(tapper)
+   return source.pipe(concatMap(tapper))
 }
 
 const tapOnFirst = (fn, ...args) => tap((x, i) => i == 0 ? fn(...args) : null)
 
-const tapOnComplete = (fn) => R.pipe(
-   reduce(R.always, null),
-   tap(fn)
-)
+const tapOnComplete = (fn) => (source) =>
+   source.pipe(
+      reduce(R.identity, null),
+      tap(fn)
+   )
 
-const writeFile = (path) => (source) => Rx.Observable.create((Observer) => {
-   let writeStream
-   let count = 0
+const finalyze = fn => source =>
+   source.pipe(
+      reduce(R.always, null),
+      tap(fn),
+      catchError(error =>
+         Observable.of(error).pipe(
+            tap(fn),
+            flatMap(throwError)
+         )
+      )
+   )
 
-   const createStream = () => {
-      writeStream = FS.createWriteStream(path, "utf-8")
-      writeStream.on('error', (e) => Observer.error(e))
-   }
+const writeFile = (path) => (source) =>
+   Observable.create((Observer) => {
+      let writeStream
+      let count = 0
 
-   const onNext = (v) => {
-      if (count === 0) { createStream() }
-      writeStream.write(v)
-      count++
-   }
-
-   const onError = (e) => {
-      if (writeStream) { writeStream.end() }
-      Observer.error(e)
-   }
-
-   const onComplete = () => {
-      if (writeStream) {
-         writeStream.end("", null, () => {
-            Observer.next()
-            Observer.complete()
-         })
+      const createStream = () => {
+         writeStream = FS.createWriteStream(path, "utf-8")
+         writeStream.on('error', (e) => Observer.error(e))
       }
-   }
 
-   const sub = source.subscribe(onNext, onError, onComplete)
-   return () => sub.unsubscribe()
-})
+      const onNext = (v) => {
+         if (count === 0) { createStream() }
+         writeStream.write(v)
+         count++
+      }
+
+      const onError = (e) => {
+         if (writeStream) { writeStream.end() }
+         Observer.error(e)
+      }
+
+      const onComplete = () => {
+         if (writeStream) {
+            writeStream.end("", null, () => {
+               Observer.next()
+               Observer.complete()
+            })
+         }
+      }
+
+      const sub = source.subscribe(onNext, onError, onComplete)
+      return () => sub.unsubscribe()
+   })
 
 const makeCsvRow = R.pipe(
    R.map(R.pipe(
@@ -70,7 +98,7 @@ const makeCsvRow = R.pipe(
    (a) => `"${a}"\r\n`
 )
 
-const writeCsv = (path) => {
+const writeCsv = (path) => (source) => {
    const tempPath = getTempFile(".csv")
 
    const headers = []
@@ -95,7 +123,7 @@ const writeCsv = (path) => {
       appendFile(tempPath, path)
    }
 
-   return R.pipe(
+   return source.pipe(
       map(makeRow),
       map(makeCsvRow),
       writeFile(tempPath),
@@ -111,37 +139,39 @@ const CreateWriter = (path) => {
    return S
 }
 
-const makeReqAsStream = (session) => (options) => Rx.Observable.create((observer) => {
-   if (typeof options == "string") options = { url: options };
-   const req = session(options)
-      .on("error", (e) => observer.error(e))
-      .on("data", (d) => observer.next(d))
-      .on("complete", () => observer.complete())
-      .on("response", (resp) =>
-         resp.statusCode >= 400
-         ? observer.error(resp.statusCode + ": " + resp.statusMessage)
-         : null
-      )
-   return () => req.abort()
-})
-
-const createReqMaker = (session) => (options) => Rx.Observable.create((o) => {
-   if (typeof options == "string") options = { url: options };
-   const req = session(options, (err, resp, body) => {
-      if (err) {
-         o.error(err.code)
-      }
-      else if (resp.statusCode >= 400) {
-         o.error(resp.statusCode + ": " + resp.statusMessage)
-      }
-      else {
-         o.next(body)
-         o.complete()
-      }
+const makeReqAsStream = (session) => (options) =>
+   Observable.create((observer) => {
+      if (typeof options == "string") options = { url: options };
+      const req = session(options)
+         .on("error", (e) => observer.error(e))
+         .on("data", (d) => observer.next(d))
+         .on("complete", () => observer.complete())
+         .on("response", (resp) =>
+            resp.statusCode >= 400
+               ? observer.error(resp.statusCode + ": " + resp.statusMessage)
+               : null
+         )
+      return () => req.abort()
    })
-   req.on("error", (e) => o.error(e))
-   return () => req.abort()
-})
+
+const createReqMaker = (session) => (options) =>
+   Observable.create((o) => {
+      if (typeof options == "string") options = { url: options };
+      const req = session(options, (err, resp, body) => {
+         if (err) {
+            o.error("Error: " + err.code)
+         }
+         else if (resp.statusCode >= 400) {
+            o.error("Error: " + resp.statusCode + ": " + resp.statusMessage)
+         }
+         else {
+            o.next(body)
+            o.complete()
+         }
+      })
+      req.on("error", (e) => o.error(e))
+      return () => req.abort()
+   })
 
 const parseXml = (tag) => {
    let rest = ""
@@ -157,44 +187,45 @@ const parseXml = (tag) => {
    return parser
 }
 
-const exec = (cmdStr) => Rx.Observable.create((Observer) => {
-   const child = CP.exec(cmdStr, (error, stdout, stderr) => {
-      const isEmpty = R.pipe(R.trim, R.isEmpty)
-      if (error) {
-         Observer.error(error)
+const exec = (cmdStr) =>
+   Observable.create((Observer) => {
+      const child = CP.exec(cmdStr, (error, stdout, stderr) => {
+         const isEmpty = R.pipe(R.trim, R.isEmpty)
+         if (error) {
+            Observer.error(error)
+         }
+         else if (!isEmpty(stderr)) {
+            Observer.error(stderr)
+         }
+         else {
+            Observer.next(stdout)
+            Observer.complete()
+         }
+      })
+      return () => child.kill()
+   })
+
+const DropLastN = (count) => (source) =>
+   Rx.Observable.create((Observer) => {
+      let bucket = []
+
+      const onNext = (v) => {
+         bucket.push(v)
+         if (bucket.length > count) {
+            Observer.next(bucket.shift())
+         }
       }
-      else if (!isEmpty(stderr)) {
-         Observer.error(stderr)
-      }
-      else {
-         Observer.next(stdout)
+
+      const onError = (err) => Observer.error(err)
+
+      const onComplete = () => {
+         bucket = null
          Observer.complete()
       }
+
+      const sub = source.subscribe(onNext, onError, onComplete)
+      return sub
    })
-   return () => child.kill()
-})
-
-const DropLastN = (count) => (source) => Rx.Observable.create((Observer) => {
-   let bucket = []
-
-   const onNext = (v) => {
-      bucket.push(v)
-      if (bucket.length > count) {
-         Observer.next(bucket.shift())
-      }
-   }
-
-   const onError = (err) => Observer.error(err)
-
-   const onComplete = () => {
-      bucket = null
-      Observer.complete()
-   }
-
-   const sub = source.subscribe(onNext, onError, onComplete)
-
-   return sub
-})
 
 
 module.exports = {
@@ -210,5 +241,8 @@ module.exports = {
    parseXml,
    makeCsvRow,
    DropLastN,
-   exec
+   exec,
+   finalyze,
+   pipe,
+   curry
 }
