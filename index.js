@@ -1,6 +1,4 @@
 const Rx = require("rxjs")
-const { Observable } = require("rxjs")
-const { throw: throwError } = Observable
 const { map, flatMap, concatMap, reduce, catchError } = require("rxjs/operators")
 const R = require("ramda")
 const FS = require("fs")
@@ -24,11 +22,11 @@ const tap = (fn) => (source) => {
    const tapper = (x, i) => {
       const v = fn(x, i)
       return (
-         ((v instanceof Observable) || (v && v.constructor && v.constructor.name === "Observable"))
+         ((v instanceof Rx.Observable) || (v && v.constructor && v.constructor.name === "Observable"))
             ? v.pipe(map(() => x))
             : (v instanceof Promise)
-               ? Observable.from(v).pipe(map(() => x))
-               : Observable.of(x)
+               ? Rx.from(v).pipe(map(() => x))
+               : Rx.of(x)
       )
    }
    return source.pipe(concatMap(tapper))
@@ -47,7 +45,7 @@ const finalyze = fn => source =>
       reduce(R.always, null),
       tap(fn),
       catchError(error =>
-         Observable.of(error).pipe(
+         Rx.of(error).pipe(
             tap(fn),
             flatMap(throwError)
          )
@@ -55,7 +53,7 @@ const finalyze = fn => source =>
    )
 
 const writeFile = (path) => (source) =>
-   Observable.create((Observer) => {
+   Rx.Observable.create((Observer) => {
       let writeStream
       let count = 0
 
@@ -140,7 +138,7 @@ const CreateWriter = (path) => {
 }
 
 const makeReqAsStream = (session) => (options) =>
-   Observable.create((observer) => {
+   Rx.Observable.create((observer) => {
       if (typeof options == "string") options = { url: options };
       const req = session(options)
          .on("error", (e) => observer.error(e))
@@ -155,7 +153,7 @@ const makeReqAsStream = (session) => (options) =>
    })
 
 const createReqMaker = (session) => (options) =>
-   Observable.create((o) => {
+   Rx.Observable.create((o) => {
       if (typeof options == "string") options = { url: options };
       const req = session(options, (err, resp, body) => {
          if (err) {
@@ -188,7 +186,7 @@ const parseXml = (tag) => {
 }
 
 const exec = (cmdStr) =>
-   Observable.create((Observer) => {
+   Rx.Observable.create((Observer) => {
       const child = CP.exec(cmdStr, (error, stdout, stderr) => {
          const isEmpty = R.pipe(R.trim, R.isEmpty)
          if (error) {
