@@ -4,6 +4,8 @@ const R = require("ramda")
 const FS = require("fs")
 const CP = require("child_process")
 const getTempFile = require("tempfile")
+const csv = ("csv-parse")
+const fs = require("fs")
 
 const curry = fn => (...args) =>
    (args.length < fn.length)
@@ -225,6 +227,33 @@ const DropLastN = (count) => (source) =>
       return sub
    })
 
+function streamToRx(stream, finishEventName = 'end', dataEventName = 'data') {
+   return Rx.Observable.create((observer) => {
+      const dataHandler = (data) => observer.next(data)
+      const errorHandler = (err) => observer.error(err)
+      const endHandler = () => observer.complete()
+
+      stream.addListener(dataEventName, dataHandler);
+      stream.addListener('error', errorHandler);
+      stream.addListener(finishEventName, endHandler);
+
+      return () => {
+         stream.removeListener(dataEventName, dataHandler);
+         stream.removeListener('error', errorHandler);
+         stream.removeListener(finishEventName, endHandler);
+      };
+   }).publish().refCount();
+}
+
+const parseCsv = (file, csvParserOptions) => 
+   Rx.Observable.create((observer) => {
+      const parser = csv(csvParserOptions)
+      const lines = fromStream(fs.createReadStream(file).pipe(parser))
+      lines.subscribe(observer)
+      return lines
+   })
+
+
 
 module.exports = {
    tap,
@@ -242,5 +271,7 @@ module.exports = {
    exec,
    finalyze,
    pipe,
-   curry
+   curry,
+   streamToRx,
+   parseCsv
 }

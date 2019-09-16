@@ -19,6 +19,7 @@
   "author": "Vikas Gautam <v33vikasgautam@gmail.com> (http://mytrikks.blogspot.com)",
   "license": "ISC",
   "dependencies": {
+    "csv-parse": "^4.4.5",
     "ramda": "^0.25.0",
     "request": "^2.88.0",
     "rxjs": "^6.3.3",
