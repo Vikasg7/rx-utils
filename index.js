@@ -233,16 +233,16 @@ function streamToRx(stream, finishEventName = 'end', dataEventName = 'data') {
       const errorHandler = (err) => observer.error(err)
       const endHandler = () => observer.complete()
 
-      stream.addListener(dataEventName, dataHandler);
-      stream.addListener('error', errorHandler);
-      stream.addListener(finishEventName, endHandler);
+      stream.addListener(dataEventName, dataHandler)
+      stream.addListener('error', errorHandler)
+      stream.addListener(finishEventName, endHandler)
 
       return () => {
-         stream.removeListener(dataEventName, dataHandler);
-         stream.removeListener('error', errorHandler);
-         stream.removeListener(finishEventName, endHandler);
-      };
-   }).publish().refCount();
+         stream.removeListener(dataEventName, dataHandler)
+         stream.removeListener('error', errorHandler)
+         stream.removeListener(finishEventName, endHandler)
+      }
+   })
 }
 
 const parseCsv = (file, csvParserOptions) => 
