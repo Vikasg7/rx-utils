@@ -227,7 +227,7 @@ const DropLastN = (count) => (source) =>
       return sub
    })
 
-function streamToRx(stream, finishEventName = 'end', dataEventName = 'data') {
+function streamToRx(stream, finishEventName = 'finish', dataEventName = 'data') {
    return Rx.Observable.create((observer) => {
       const dataHandler = (data) => observer.next(data)
       const errorHandler = (err) => observer.error(err)
