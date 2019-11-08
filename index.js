@@ -27,7 +27,10 @@ const tap = (fn) => (source) => {
          ((v instanceof Rx.Observable) || (v && v.constructor && v.constructor.name === "Observable"))
             ? v.pipe(map(() => x))
             : (v instanceof Promise)
-               ? Rx.from(v).pipe(map(() => x))
+               ? Rx.from(v).pipe(
+                  reduce(R.identity, null),
+                  map(() => x)
+                )
                : Rx.of(x)
       )
    }
